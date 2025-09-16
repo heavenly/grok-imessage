@@ -292,7 +292,7 @@ at the end of your message, append:
 
     async def list_threads(self):
         """List all threads in the collection."""
-        url = "https://www.perplexity.ai/rest/collections/list_collection_threads?collection_slug=groq-bJiBXeZ6TA61QjNdwGvijg&limit=20&filter_by_user=true&filter_by_shared_threads=false&offset=0&version=2.18&source=default"
+        url = "https://www.perplexity.ai/rest/collections/list_collection_threads?collection_slug=REPLACE_WITH_YOUR_SLUG&limit=20&filter_by_user=true&filter_by_shared_threads=false&offset=0&version=2.18&source=default"
 
         headers = {
             'User-Agent': USER_AGENT,
