@@ -53,6 +53,7 @@ An intelligent iMessage automation bot that integrates with Perplexity AI (Grok)
    TARGET_COLLECTION_UUID=your_collection_uuid_here
    ```
 
+4. ctrl+f find REPLACE_WITH_YOUR_SLUG and replace with your collection slug id
 ### Authentication Setup
 
 1. **Log into Perplexity.ai** in your browser
