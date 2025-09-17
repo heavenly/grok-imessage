@@ -7,6 +7,7 @@ import os
 import sqlite3
 import pathlib
 import getpass
+import glob
 from collections import deque
 from typing import Dict, Optional
 
@@ -37,47 +38,49 @@ grok_pattern = re.compile(r'~(\d+)m?M?')
 contact_cache = {}
 handle_cache = {}
 
-async def get_contact_name(phone: str) -> str:
+def get_contact_name(phone: str) -> str:
     """
-    Get the first name for a phone number from Contacts using AppleScript.
+    Get the first name for a phone number from Contacts database directly.
     Returns the phone number if not found.
     Uses caching to avoid repeated lookups.
     """
     if phone in contact_cache:
         return contact_cache[phone]
-    applescript = f'''
-    tell application "Contacts"
-        try
-            set thePerson to first person whose value of phones contains "{phone}"
-            set firstName to first name of thePerson
-            if firstName is not "" then
-                return firstName
-            else
-                return name of thePerson
-            end if
-        on error
-            return "{phone}"
-        end try
-    end tell
-    '''
-    try:
-        process = await asyncio.create_subprocess_exec(
-            "osascript", "-s", "o", "-e", applescript,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE
-        )
-        await process.wait()
-        if process.returncode != 0:
-            stdout, stderr = await process.communicate()
-            raise subprocess.CalledProcessError(process.returncode, "osascript", output=stdout, stderr=stderr)
-        stdout, stderr = await process.communicate()
-        name = stdout.decode().strip()
-        final_name = name if name else phone
-        contact_cache[phone] = final_name
-        return final_name
-    except subprocess.CalledProcessError:
-        contact_cache[phone] = phone
-        return phone
+
+    # Normalize phone: remove non-digits
+    normalized_phone = ''.join(c for c in phone if c.isdigit())
+
+    # Find all source DBs
+    sources_pattern = os.path.expanduser("~/Library/Application Support/AddressBook/Sources/*/AddressBook-v22.abcddb")
+    sources = glob.glob(sources_pattern)
+
+    for db_path in sources:
+        try:
+            conn = sqlite3.connect(db_path)
+            cursor = conn.cursor()
+            # Query for contact matching the phone
+            cursor.execute("""
+                SELECT r.ZFIRSTNAME, r.ZLASTNAME
+                FROM ZABCDPHONENUMBER p
+                JOIN ZABCDRECORD r ON p.ZOWNER = r.Z_PK
+                WHERE REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(p.ZFULLNUMBER, ' ', ''), '-', ''), '(', ''), ')', ''), '+', '') = ?
+                LIMIT 1
+            """, (normalized_phone,))
+            result = cursor.fetchone()
+            conn.close()
+            if result:
+                first, last = result
+                name = f"{first or ''} {last or ''}".strip()
+                if not name:
+                    continue  # Empty name, try next
+                contact_cache[phone] = name
+                return name
+        except Exception:
+            continue  # Try next DB
+
+    # Not found
+    contact_cache[phone] = phone
+    return phone
 
 class MessageBuffer:
 
@@ -247,7 +250,7 @@ At the end of your message, append: "used {context_count} message(s) of context.
                 sender_name = getpass.getuser().title().split()[0]
             else:
                 sender_phone = self.get_phone_from_handle_id(sender_id)
-                sender_name = await get_contact_name(sender_phone)
+                sender_name = get_contact_name(sender_phone)
         else:
             sender_name = sender_id
         print(f"[iMessage] {sender_name}: {message_str}")

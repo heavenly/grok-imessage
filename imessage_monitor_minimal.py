@@ -542,10 +542,10 @@ class iMessageMonitor:
         if self.config.monitoring.enable_real_time:
             try:
                 realtime_active = self._realtime_monitor.start(self._db_path, self._check_new_messages)
-            if realtime_active:
-                pass  # Real-time monitoring started
-            else:
-                pass  # Failed to start real-time monitoring
+                if realtime_active:
+                    pass  # Real-time monitoring started
+                else:
+                    pass  # Failed to start real-time monitoring
             except Exception as e:
                 pass
         while self._is_running:
