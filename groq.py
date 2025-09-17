@@ -29,8 +29,7 @@ JAN_API_URL = "http://localhost:1337/v1/chat/completions"  # Adjust port if need
 GROK_PREFIX = "@grok"
 KROG_RESPONSE_PREFIX = "[KROG]: "
 DEFAULT_CONTEXT_COUNT = 1
-MAX_CONTEXT_COUNT = 10
-MAX_BUFFER_SIZE = 10
+MAX_MESSAGE_BUFFER = 10
 
 # Compiled regex for performance
 grok_pattern = re.compile(r'~(\d+)m?M?')
@@ -84,7 +83,7 @@ def get_contact_name(phone: str) -> str:
 
 class MessageBuffer:
 
-    def __init__(self, max_size: int = MAX_BUFFER_SIZE):
+    def __init__(self, max_size: int = MAX_MESSAGE_BUFFER):
         self.buffers: Dict[str, deque[str]] = {}
         self.max_size = max_size
 
@@ -214,7 +213,7 @@ class iMessageDaemon:
         match = grok_pattern.search(message_str)
         if match:
             context_count = int(match.group(1))
-            if 1 <= context_count <= MAX_CONTEXT_COUNT:
+            if 1 <= context_count <= MAX_MESSAGE_BUFFER:
                 message_str = grok_pattern.sub('', message_str).strip()
             else:
                 context_count = DEFAULT_CONTEXT_COUNT
