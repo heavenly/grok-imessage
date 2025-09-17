@@ -1,5 +1,5 @@
 import asyncio
-from imessage_monitor import iMessageMonitor
+from imessage_monitor_minimal import iMessageMonitor
 import subprocess
 import aiohttp
 import re
