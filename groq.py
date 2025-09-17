@@ -2,13 +2,12 @@ import asyncio
 from imessage_monitor import iMessageMonitor
 import subprocess
 import aiohttp
-import json
 import re
 import os
 import sqlite3
 import pathlib
 import getpass
-import string
+from collections import deque
 from typing import Dict, Optional
 
 def load_env():
@@ -32,27 +31,20 @@ DEFAULT_CONTEXT_COUNT = 1
 MAX_CONTEXT_COUNT = 10
 MAX_BUFFER_SIZE = 10
 
-def get_phone_from_handle_id(handle_id: int) -> str:
-    """
-    Get the phone number/email from handle table using handle_id (ROWID).
-    """
-    db_path = pathlib.Path.home() / "Library/Messages/chat.db"
-    try:
-        conn = sqlite3.connect(str(db_path))
-        cursor = conn.cursor()
-        cursor.execute("SELECT id FROM handle WHERE ROWID = ?", (handle_id,))
-        result = cursor.fetchone()
-        conn.close()
-        return result[0] if result else str(handle_id)
-    except Exception as e:
-        print(f"Error querying handle: {e}")
-        return str(handle_id)
+# Compiled regex for performance
+grok_pattern = re.compile(r'~(\d+)m?M?')
 
-def get_contact_name(phone: str) -> str:
+contact_cache = {}
+handle_cache = {}
+
+async def get_contact_name(phone: str) -> str:
     """
     Get the first name for a phone number from Contacts using AppleScript.
     Returns the phone number if not found.
+    Uses caching to avoid repeated lookups.
     """
+    if phone in contact_cache:
+        return contact_cache[phone]
     applescript = f'''
     tell application "Contacts"
         try
@@ -69,42 +61,39 @@ def get_contact_name(phone: str) -> str:
     end tell
     '''
     try:
-        result = subprocess.run(
-            ["osascript", "-s", "o", "-e", applescript],
-            capture_output=True,
-            text=True,
-            check=True
+        process = await asyncio.create_subprocess_exec(
+            "osascript", "-s", "o", "-e", applescript,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE
         )
-        name = result.stdout.strip()
-        return name if name else phone
+        await process.wait()
+        if process.returncode != 0:
+            stdout, stderr = await process.communicate()
+            raise subprocess.CalledProcessError(process.returncode, "osascript", output=stdout, stderr=stderr)
+        stdout, stderr = await process.communicate()
+        name = stdout.decode().strip()
+        final_name = name if name else phone
+        contact_cache[phone] = final_name
+        return final_name
     except subprocess.CalledProcessError:
+        contact_cache[phone] = phone
         return phone
 
 class MessageBuffer:
 
     def __init__(self, max_size: int = MAX_BUFFER_SIZE):
-
-        self.buffers: Dict[str, list[str]] = {}
-
+        self.buffers: Dict[str, deque[str]] = {}
         self.max_size = max_size
 
     def add_message(self, chat_id: str, message: str):
-
         if chat_id not in self.buffers:
-
-            self.buffers[chat_id] = []
+            self.buffers[chat_id] = deque(maxlen=self.max_size)
 
         self.buffers[chat_id].append(message)
 
-        if len(self.buffers[chat_id]) > self.max_size:
-
-            self.buffers[chat_id].pop(0)
-
     def get_context(self, chat_id: str, count: int) -> str:
-
-        buffer = self.buffers.get(chat_id, [])
-
-        return "\n".join(buffer[-count:]) if buffer else ""
+        buffer = self.buffers.get(chat_id, deque())
+        return "\n".join(list(buffer)[-count:]) if buffer else ""
 
 
 
@@ -129,7 +118,7 @@ async def query_jan(prompt: str) -> Optional[str]:
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": prompt}
         ],
-        "model": "jan-nano-128k-Q4_K_S",
+        "model": "Jan-v1-4B-Q8_0",
         "stream": False
     }
 
@@ -183,9 +172,30 @@ class iMessageDaemon:
         self.loop = None
         self.is_running = True
         self.message_buffer = MessageBuffer()
-        
+        self.conn = sqlite3.connect(str(pathlib.Path.home() / "Library/Messages/chat.db"))
+
         # Start monitoring
         self.run_monitor_in_thread()
+
+    def get_phone_from_handle_id(self, handle_id: int) -> str:
+        """
+        Get the phone number/email from handle table using handle_id (ROWID).
+        Uses caching to avoid repeated lookups.
+        """
+        if handle_id in handle_cache:
+            return handle_cache[handle_id]
+        try:
+            cursor = self.conn.cursor()
+            cursor.execute("SELECT id FROM handle WHERE ROWID = ?", (handle_id,))
+            result = cursor.fetchone()
+            phone = result[0] if result else str(handle_id)
+            handle_cache[handle_id] = phone
+            return phone
+        except Exception as e:
+            print(f"Error querying handle: {e}")
+            phone = str(handle_id)
+            handle_cache[handle_id] = phone
+            return phone
 
     def _clean_message(self, message) -> str:
         message_str = message['decoded_attributed_body'].strip()
@@ -198,11 +208,11 @@ class iMessageDaemon:
     def _parse_grok_command(self, message_str: str) -> tuple[str, int]:
         message_str = message_str.replace(GROK_PREFIX, "").strip()
         context_count = DEFAULT_CONTEXT_COUNT
-        match = re.search(r'~(\d+)m?M?', message_str)
+        match = grok_pattern.search(message_str)
         if match:
             context_count = int(match.group(1))
             if 1 <= context_count <= MAX_CONTEXT_COUNT:
-                message_str = re.sub(r'~\d+m?M?', '', message_str).strip()
+                message_str = grok_pattern.sub('', message_str).strip()
             else:
                 context_count = DEFAULT_CONTEXT_COUNT
         return message_str, context_count
@@ -236,8 +246,8 @@ At the end of your message, append: "used {context_count} message(s) of context.
             if sender_id == 0:
                 sender_name = getpass.getuser().title().split()[0]
             else:
-                sender_phone = get_phone_from_handle_id(sender_id)
-                sender_name = get_contact_name(sender_phone)
+                sender_phone = self.get_phone_from_handle_id(sender_id)
+                sender_name = await get_contact_name(sender_phone)
         else:
             sender_name = sender_id
         print(f"[iMessage] {sender_name}: {message_str}")
@@ -271,6 +281,8 @@ At the end of your message, append: "used {context_count} message(s) of context.
         finally:
             if self.monitor:
                 self.monitor.stop()
+            if self.conn:
+                self.conn.close()
 
 
 
