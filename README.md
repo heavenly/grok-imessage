@@ -1,11 +1,11 @@
 # Grok iMessage Bot 🤖
 
-An intelligent iMessage automation bot that integrates with Perplexity AI (Grok) to provide conversational AI responses in iMessage group chats. The bot automatically cleans up conversation threads after each interaction to maintain a tidy workspace.
+An intelligent iMessage automation bot that integrates with local Jan.ai to provide conversational AI responses in iMessage group chats. The bot automatically cleans up conversation threads after each interaction to maintain a tidy workspace.
 
 ## ✨ Features
 
 - **Real-time iMessage Monitoring**: Continuously monitors iMessage conversations for trigger commands
-- **AI-Powered Responses**: Leverages Perplexity AI (Grok) for intelligent, context-aware responses
+- **AI-Powered Responses**: Leverages local Jan.ai for intelligent, context-aware responses
 - **Context Preservation**: Maintains conversation context across multiple messages
 - **Automatic Thread Cleanup**: Automatically deletes processed threads to keep your Perplexity workspace organized
 - **Async Processing**: Non-blocking architecture ensures responsive message handling
@@ -17,7 +17,7 @@ An intelligent iMessage automation bot that integrates with Perplexity AI (Grok)
 
 - **Python 3.8+**
 - **macOS** (required for iMessage integration)
-- **Perplexity AI Account** with API access
+- **Jan.ai** local server running (download from https://jan.ai/)
 - **Messages.app** permissions
 
 ### Installation
@@ -34,35 +34,26 @@ An intelligent iMessage automation bot that integrates with Perplexity AI (Grok)
    ```
 
 3. **Configure environment variables:**
-   ```bash
-   cp .env.example .env
-   ```
+    ```bash
+    cp .env.example .env
+    ```
 
-   Edit `.env` with your credentials:
-   ```env
-   # Perplexity.ai Authentication (get from browser dev tools)
-   AUTH_COOKIE=your_auth_cookie_here
-   USER_NEXTAUTH_ID=your_user_id_here
-   VISITOR_ID=your_visitor_id_here
+    Edit `.env` with your credentials:
+    ```env
+    # Jan.ai Authentication
+    JAN_BEARER_TOKEN=your_jan_bearer_token_here
 
-   # iMessage Configuration
-   CHAT_IDENTIFIER=your_chat_identifier_here
-   GROUP_GUID=your_group_guid_here
-
-   # Perplexity Collection UUID
-   TARGET_COLLECTION_UUID=your_collection_uuid_here
-   ```
+    # iMessage Configuration
+    CHAT_IDENTIFIER=your_chat_identifier_here
+    GROUP_GUID=your_group_guid_here
+    ```
 
 4. ctrl+f find REPLACE_WITH_YOUR_SLUG and replace with your collection slug id
 ### Authentication Setup
 
-1. **Log into Perplexity.ai** in your browser
-2. **Open Developer Tools** (F12)
-3. **Navigate to Application/Storage > Cookies**
-4. **Copy the required values:**
-   - `AUTH_COOKIE`: Full cookie string from perplexity.ai
-   - `USER_NEXTAUTH_ID`: User identifier
-   - `VISITOR_ID`: Visitor tracking ID
+1. **Install and run Jan.ai** locally
+2. **Obtain Bearer Token**: Check Jan.ai documentation or settings for API authentication
+3. **Set JAN_BEARER_TOKEN** in your `.env` file
 
 ## 📱 Usage
 
@@ -82,6 +73,8 @@ Send messages starting with `@grok` in your iMessage group chat:
 @grok Summarize our conversation ~10m
 ```
 
+Responses will be in lowercase, concise, and without punctuation.
+
 ### Context Commands
 
 - `@grok [question]` - Basic query
@@ -92,7 +85,7 @@ Send messages starting with `@grok` in your iMessage group chat:
 
 The bot responds with:
 ```
-[KROG]: [AI Response]
+[KROG]: [ai response in lowercase, concise, no punctuation]
 used X message(s) of context.
 ```
 
@@ -105,9 +98,9 @@ used X message(s) of context.
    - Manages message monitoring and processing
 
 2. **Message Processing Pipeline**
-   ```
-   iMessage Received → Parse Command → Query Perplexity → Send Response → Cleanup Threads
-   ```
+    ```
+    iMessage Received → Parse Command → Query Jan.ai → Send Response → Cleanup Threads
+    ```
 
 3. **Async Architecture**
    - Non-blocking HTTP requests with `aiohttp`
@@ -117,6 +110,7 @@ used X message(s) of context.
 ### Key Files
 
 - `groq.py` - Main bot implementation
+- `imessage_monitor.py` - iMessage monitoring module
 - `.env` - Environment configuration (not in repo)
 - `.env.example` - Configuration template
 - `.gitignore` - Security exclusions
@@ -127,12 +121,9 @@ used X message(s) of context.
 
 | Variable | Description | Required |
 |----------|-------------|----------|
-| `AUTH_COOKIE` | Perplexity authentication cookie | ✅ |
-| `USER_NEXTAUTH_ID` | User identifier | ✅ |
-| `VISITOR_ID` | Visitor tracking ID | ✅ |
+| `JAN_BEARER_TOKEN` | Jan.ai API bearer token | ✅ |
 | `CHAT_IDENTIFIER` | iMessage chat identifier | ✅ |
 | `GROUP_GUID` | iMessage group GUID | ✅ |
-| `TARGET_COLLECTION_UUID` | Perplexity collection UUID | ✅ |
 
 ### Message Buffer Settings
 
@@ -157,6 +148,7 @@ MAX_BUFFER_SIZE = 10          # Message buffer size
 ```
 grok-imessage/
 ├── groq.py                 # Main bot implementation
+├── imessage_monitor.py     # iMessage monitoring module
 ├── .env.example           # Configuration template
 ├── .gitignore            # Security exclusions
 ├── README.md             # This file
@@ -204,14 +196,19 @@ System Preferences → Security & Privacy → Privacy → Accessibility
 ```
 
 **Authentication errors**
-- Verify `.env` credentials are current
-- Check Perplexity.ai session is active
-- Refresh authentication cookies
+- Verify `JAN_BEARER_TOKEN` in `.env` is correct
+- Ensure Jan.ai server is running on localhost:1337
+- Check Jan.ai API documentation for token setup
 
 **iMessage not responding**
 - Ensure Messages.app is running
 - Check chat identifiers in `.env`
 - Verify group chat permissions
+
+**Jan.ai server issues**
+- Confirm Jan.ai is installed and running
+- Check server is accessible at http://localhost:1337
+- Verify the model "jan-nano-128k-Q4_K_S" is loaded
 
 ### Debug Mode
 
